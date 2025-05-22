@@ -17,4 +17,4 @@ mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python3 practicum_6/homework/matrix_chain_multiplication.py"
+args = "python3 practicum_7/homework/lu_with_permute.py"

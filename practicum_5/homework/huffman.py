@@ -5,7 +5,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
 from pathlib import Path
 import heapq
-from typing import Any, List
+from typing import Any, List, Union
 from abc import ABC, abstractmethod
 
 import networkx as nx
@@ -19,91 +19,83 @@ import random
 
 class HuffmanCoding:
     def __init__(self) -> None:
-        self.frequency = {}
-        self.codes = {}
-        self.decoded_map = {}
-        self.code_list = []
+        self.encode_dict = {}
+        self.decode_dict = {}
+        
 
+    def encode(self, sequence: list[Any]) -> str:
+        freq_dict = {elem: 0 for elem in sequence}
+        for elem in sequence:
+            freq_dict[elem] += 1
 
-    def encode(self, sequence: List[Any]) -> str:
-        self.frequency = {element: 0 for element in sequence}
-        self.codes = {element: '' for element in sequence}
-        self.decoded_map = {element: '' for element in sequence}
+        heap = [[freq, [char, '']] for char, freq in freq_dict.items()]
+        heapq.heapify(heap)
 
-        for element in sequence:
-            self.frequency[element] += 1
+        while len(heap) > 1:
+            left  = heapq.heappop(heap)  # left elems / subtrees with min frequency
+            right = heapq.heappop(heap)  # right elems / ...
 
-        while len(self.frequency) > 1:
-            least_freq = {
-                'left': min(self.frequency, key=self.frequency.get),
-                'left_freq': self.frequency.pop(min(self.frequency, key=self.frequency.get)),
-                'right': min(self.frequency, key=self.frequency.get),
-                'right_freq': self.frequency.pop(min(self.frequency, key=self.frequency.get)),
-            }
+            for elem in left[1:]:
+                elem[1] = '0' + elem[1]
+            for elem in right[1:]:
+                elem[1] = '1' + elem[1]
+            heapq.heappush(heap, [left[0] + right[0]] + left[1:] + right[1:])  # forming new node like: [summed_freq, [freq1, code1], [freq2, code2], ...]
 
-            for char in least_freq['left']:
-                self.codes[char] = '0' + self.codes[char]
-            for char in least_freq['right']:
-                self.codes[char] = '1' + self.codes[char]
+        heap = heap[0]  # before this, the heap was an array within an array
+        for elem in heap[1:]:  # starting from 1 as the first elem is total frequency, which is just the length of sequence
+            self.encode_dict[elem[0]] = elem[1]
+            self.decode_dict[elem[1]] = elem[0]
 
-            self.frequency[least_freq['left'] + least_freq['right']] = least_freq['left_freq'] + least_freq['right_freq']
+        return ''.join(self.encode_dict[char] for char in sequence)
+        
 
-        self.code_list = [self.codes[element] for element in sequence]
-        self.decoder_dict = {self.codes[element]: element for element in sequence}
-        # print(self.decoder_dict, ''.join(self.code_list), self.code_list)
-
-        return ''.join(self.code_list)
-
-
-    def decode(self, enc_data: str) -> list[Any]:
-        curr_code = ''
-        result = ''
-        for char in enc_data:
-            curr_code += char
-            if curr_code in self.code_list:
-                result += self.decoder_dict[curr_code]
-                curr_code = ''
-
-        return list(result)
-
+    def decode(self, encoded_sequence: str) -> list[Any]:
+        decoded = []
+        bits = ''
+        for bit in encoded_sequence:
+            bits += bit
+            if bits in self.decode_dict:
+                decoded.append(self.decode_dict[bits])
+                bits = ''
+        return decoded
+        
 
 
 class LossyCompression:
     def __init__(self) -> None:
-        self.centers = []
+        self.gaps = 1000
+        self.huffman = HuffmanCoding()
 
     def compress(self, time_series: NDArrayFloat) -> str:
-        self.data = time_series
-        self.interval_length = (np.max(time_series) - np.min(time_series)) / len(time_series)
-        self.intervals = [np.min(time_series)]
+        min_val, max_val = np.min(time_series), np.max(time_series)
+        self.edges = np.linspace(min_val, max_val, self.gaps + 1)
+        self.centers = [(self.edges[i] + self.edges[i + 1]) / 2 for i in range(self.gaps + 1 - 1)]
+        indices = np.digitize(time_series, self.edges) - 1  # indices of segments which values lie in (determined by comparing the value to the edges; '- 1' cuz we start indices at 0 :) )
+        indices = np.clip(indices, 0, self.gaps - 1)  # handling outliers
+        
+        return self.huffman.encode(list(indices))
 
-        for _ in range(len(time_series)):
-            self.intervals.append(self.intervals[-1] + self.interval_length)
-            self.centers.append((self.intervals[-2] + self.intervals[-1]) / 2)
-        self.compressed_code = np.digitize(self.data, bins=self.intervals) - 1
-
-        return ';'.join([str(inx) for inx in self.compressed_code])
-
-
+    
     def decompress(self, bits: str) -> NDArrayFloat:
-        indices = list([int(bit) for bit in bits.split(';')])
+        indices = self.huffman.decode(bits)
 
-        return np.array([self.centers[i] for i in indices], dtype=np.float64)
+        return np.array([self.centers[ind] for ind in indices])
+
 
 
 if __name__ == "__main__":
 
     huffman = HuffmanCoding()
-    data = list('abcaao')
+    data = [1,3,4,2,32,3,4]
     enc_data = huffman.encode(data)
     dec_data = huffman.decode(enc_data)
 
     print('\n==============[ HUFFMAN ALGORITHM OUTPUT ]==============')
     print(
-       f'\nData:                    {data}              ',
-       f'\nEncoded data:            {enc_data}          ',
-       f'\nDecoded data:            {dec_data}          ',
-       f'\nActual and decode equal: {data == dec_data}\n'
+       f'\nData:                     {data}              ',
+       f'\nEncoded data:             {enc_data}          ',
+       f'\nDecoded data:             {dec_data}          ',
+       f'\nActual and decoded equal: {data == dec_data}\n'
     )
 
 
